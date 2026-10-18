@@ -14,7 +14,8 @@ import {
   Sparkles,
   RefreshCw,
   Plus,
-  Users
+  Users,
+  Copy,
 } from 'lucide-react';
 import { Prospect, OutreachLog, EmailTemplate, OutreachStatus, WebsiteDraft } from '../../types/index.ts';
 import { interpolateEmailTemplate } from '../../utils/pipeline.ts';
@@ -49,18 +50,50 @@ const DEFAULT_PITCH_TEMPLATE: EmailTemplate = {
   subject: 'A website concept for {{businessName}}',
   bodyTemplate: `Hi {{contactName}},
 
-I found {{businessName}} in {{city}} and put together a website concept tailored to your business.
+I put together an interactive website concept tailored to {{businessName}}.
 
-Your Google listing shows {{rating}}. I focused the concept on clear service information and an easy way for potential customers to get in touch.
+{{researchSummary}}
 
-Take a look at the preview below. If it feels useful, would you be open to a quick conversation?
-
-{{demoUrl}}
+If the concept feels useful, would you be open to a quick conversation?
 
 Best,
 SiteSeller Agent`,
-  description: 'A personalized introduction with a real, shareable website concept preview.',
+  description: 'A personalized pitch with prospect research and a shareable website concept preview.',
 };
+
+function getProspectPainPoints(prospect: Prospect): string[] {
+  if (prospect.painPoints?.length) return prospect.painPoints;
+  const statusDescriptions: Partial<Record<Prospect['websiteStatus'], string>> = {
+    no_website: 'No website is listed for this business.',
+    outdated: 'The existing website may be outdated.',
+    broken: 'The existing website appears to be unavailable.',
+    broken_mobile: 'The existing website may not work well on mobile devices.',
+  };
+  const description = statusDescriptions[prospect.websiteStatus];
+  return description ? [description] : ['No website pain point was detected.'];
+}
+
+function getProspectResearchSummary(prospect: Prospect, demoUrl: string): string {
+  const location = [prospect.address, prospect.city, prospect.state]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(', ') || 'Not listed';
+  const rating = prospect.rating > 0 ? `${prospect.rating.toFixed(1)} / 5.0` : 'Not listed';
+  const reviewsCount = prospect.reviewsCount > 0
+    ? prospect.reviewsCount.toLocaleString()
+    : 'Not listed';
+
+  return `CLIENT RESEARCH
+Business: ${prospect.name}
+Location: ${location}
+Google rating: ${rating}
+Total Google reviews: ${reviewsCount}
+Detected pain points:
+${getProspectPainPoints(prospect).map((point) => `- ${point}`).join('\n')}
+
+INTERACTIVE DEMO PREVIEW
+${demoUrl || '[website preview is being prepared]'}`;
+}
 
 export const OutreachControlPanel: React.FC<OutreachControlPanelProps> = ({
   prospects,
@@ -89,6 +122,7 @@ export const OutreachControlPanel: React.FC<OutreachControlPanelProps> = ({
   const [emailLookupMessage, setEmailLookupMessage] = useState('');
   const [demoStatus, setDemoStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [demoError, setDemoError] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
 
   // Active items
   const activeProspect = prospects.find((p) => p.id === selectedProspectId) || prospects[0];
@@ -168,18 +202,35 @@ export const OutreachControlPanel: React.FC<OutreachControlPanelProps> = ({
       category: activeProspect.category,
       city: activeProspect.city,
       reviewsCount: activeProspect.reviewsCount,
-      rating: activeProspect.rating > 0 ? `${activeProspect.rating.toFixed(1)} / 5` : 'not listed',
+      rating: activeProspect.rating > 0 ? `${activeProspect.rating.toFixed(1)} / 5.0` : 'not listed',
       demoUrl: demoUrl || `[website preview is ${demoStatus === 'loading' ? 'being generated' : 'unavailable'}]`,
+      researchSummary: getProspectResearchSummary(activeProspect, demoUrl),
+      painPoints: getProspectPainPoints(activeProspect).join('; '),
       senderName: 'SiteSeller Agent',
     };
 
     setCustomSubject(interpolateEmailTemplate(activeTemplate.subject, vars));
     const body = interpolateEmailTemplate(activeTemplate.bodyTemplate, vars);
-    setCustomBody(demoUrl && !body.includes(demoUrl)
-      ? `${body.trim()}\n\nView the website concept: ${demoUrl}`
-      : body);
+    const withResearch = body.includes('CLIENT RESEARCH')
+      ? body
+      : `${body.trim()}\n\n${vars.researchSummary}`;
+    setCustomBody(demoUrl && !withResearch.includes(demoUrl)
+      ? `${withResearch.trim()}\n\nINTERACTIVE DEMO PREVIEW\n${demoUrl}`
+      : withResearch);
   }, [selectedProspectId, selectedTemplateId, activeProspect?.id, activeProspect?.name, activeProspect?.city,
-    activeProspect?.rating, activeProspect?.reviewsCount, activeTemplate?.id, demoUrl, demoStatus]);
+    activeProspect?.address, activeProspect?.state, activeProspect?.rating, activeProspect?.reviewsCount,
+    activeProspect?.websiteStatus, activeProspect?.painPoints, activeTemplate?.id, demoUrl, demoStatus]);
+
+  const handleCopyEmail = async () => {
+    const emailText = `To: ${recipientEmail || '[recipient email]'}\nSubject: ${customSubject}\n\n${customBody}`;
+    try {
+      await navigator.clipboard.writeText(emailText);
+      setCopyStatus('Email copied. Paste it into your email client to review and send.');
+    } catch (error) {
+      console.error('Could not copy outreach email:', error);
+      setCopyStatus('Copy failed. Select the email text and copy it manually.');
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,8 +371,23 @@ export const OutreachControlPanel: React.FC<OutreachControlPanelProps> = ({
               >
                 Preview Mode
               </button>
+              <button
+                type="button"
+                onClick={handleCopyEmail}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-slate-700 text-slate-300 hover:text-white hover:border-sky-500 transition-colors"
+                aria-label="Copy recipient, subject, and email body"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copy email
+              </button>
             </div>
           </div>
+
+          {copyStatus && (
+            <div role="status" className="mb-4 p-3 bg-sky-950/40 border border-sky-500/40 rounded-lg text-sky-200 text-xs">
+              {copyStatus}
+            </div>
+          )}
 
           {sendSuccessMsg && (
             <div className="mb-4 p-3 bg-emerald-950/40 border border-emerald-500/50 rounded-lg text-emerald-200 text-xs flex items-center gap-2 animate-fade-in">

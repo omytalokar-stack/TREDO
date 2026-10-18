@@ -240,7 +240,7 @@ export default function App() {
       console.error('Pitch error:', err);
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
       const message = /only send testing emails/i.test(errorMessage)
-        ? 'Resend is in testing mode. Verify a domain in Resend and set RESEND_FROM_EMAIL to an address on that domain. Testing mode only allows sending to your own email address.'
+        ? 'Resend testing mode only allows sending to your account email. This prospect email was not sent. Use Copy email to send it manually, or verify a domain in Resend to enable client delivery.'
         : `Email was not sent: ${errorMessage}`;
       showToast(message, 'error');
       return false;

@@ -54,7 +54,58 @@ function serialize(doc: mongoose.Document): Record<string, unknown> & { id: stri
 }
 
 function templateDefaults(): EmailTemplate[] {
-  return [];
+  return [{
+    id: 'builtin-local-pitch',
+    name: 'Personalized website concept',
+    category: 'Cold Demo Pitch',
+    subject: 'A website concept for {{businessName}}',
+    bodyTemplate: `Hi {{contactName}},
+
+I put together an interactive website concept tailored to {{businessName}}.
+
+{{researchSummary}}
+
+If the concept feels useful, would you be open to a quick conversation?
+
+Best,
+SiteSeller Agent`,
+    description: 'A personalized pitch with prospect research and a shareable website concept preview.',
+  }];
+}
+
+function prospectWebsitePainPoints(prospect: Prospect): string[] {
+  if (prospect.painPoints?.length) return prospect.painPoints;
+  const statusDescriptions: Partial<Record<Prospect['websiteStatus'], string>> = {
+    no_website: 'No website is listed for this business.',
+    outdated: 'The existing website may be outdated.',
+    broken: 'The existing website appears to be unavailable.',
+    broken_mobile: 'The existing website may not work well on mobile devices.',
+  };
+  const description = statusDescriptions[prospect.websiteStatus];
+  return description ? [description] : ['No website pain point was detected.'];
+}
+
+function prospectResearchSummary(prospect: Prospect, demoUrl: string): string {
+  const location = [prospect.address, prospect.city, prospect.state]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(', ') || 'Not listed';
+  const rating = Number(prospect.rating) > 0 ? `${Number(prospect.rating).toFixed(1)} / 5.0` : 'Not listed';
+  const reviewsCount = Number(prospect.reviewsCount) > 0
+    ? `${Number(prospect.reviewsCount).toLocaleString()}`
+    : 'Not listed';
+  const painPoints = prospectWebsitePainPoints(prospect).map((point) => `- ${point}`).join('\n');
+
+  return `CLIENT RESEARCH
+Business: ${prospect.name}
+Location: ${location}
+Google rating: ${rating}
+Total Google reviews: ${reviewsCount}
+Detected pain points:
+${painPoints}
+
+INTERACTIVE DEMO PREVIEW
+${demoUrl}`;
 }
 
 function escapeHtml(value: unknown): string {
@@ -694,11 +745,22 @@ Return valid JSON only, with these fields: tagline (short), headline (one senten
         contactName: String(prospect.get('name') || '').split(' ')[0] || 'Team',
         city: prospect.get('city'),
         demoUrl,
+        researchSummary: prospectResearchSummary(
+          prospect.toObject() as Prospect,
+          demoUrl,
+        ),
         rating: Number(prospect.get('rating')) > 0 ? `${prospect.get('rating')} / 5` : 'not listed',
+        reviewsCount: Number(prospect.get('reviewsCount')) > 0
+          ? Number(prospect.get('reviewsCount')).toLocaleString()
+          : 'not listed',
+        painPoints: prospectWebsitePainPoints(prospect.toObject() as Prospect).join('; '),
       };
       const resolvedSubject = interpolateEmailTemplate(String(subject), templateVariables);
       let resolvedBody = interpolateEmailTemplate(String(body), templateVariables)
         .replace(/https?:\/\/[^\s)]+\/demo\/[a-f\d]{24}/gi, demoUrl);
+      if (!resolvedBody.includes('CLIENT RESEARCH')) {
+        resolvedBody = `${resolvedBody.trim()}\n\n${templateVariables.researchSummary}`;
+      }
       if (!resolvedBody.includes(demoUrl)) {
         resolvedBody = `${resolvedBody.trim()}\n\nView your website concept: ${demoUrl}`;
       }
@@ -717,7 +779,14 @@ Return valid JSON only, with these fields: tagline (short), headline (one senten
       });
       const resendResult = await resendResponse.json() as { id?: string; message?: string; name?: string };
       if (!resendResponse.ok || !resendResult.id) {
-        throw new Error(resendResult.message || resendResult.name || 'Resend failed to send the email.');
+        const providerError = resendResult.message || resendResult.name || 'Resend failed to send the email.';
+        if (/only send testing emails/i.test(providerError)) {
+          return res.status(422).json({
+            error: 'Resend testing mode only allows sending to the account owner. This prospect email was not sent. Use Copy email to send it manually, or verify a sending domain in Resend to enable client delivery.',
+            code: 'RESEND_TEST_MODE',
+          });
+        }
+        throw new Error(providerError);
       }
 
       const doc = await OutreachLogModel.create({
