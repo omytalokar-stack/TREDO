@@ -24,7 +24,7 @@ View your app in AI Studio: https://ai.studio/apps/748e630e-c617-46b3-a9e1-2c606
 Deploy the Vite frontend to Vercel and the Express backend to Render. Vercel
 serves only `dist/client`; Render runs the built Express server.
 
-Set `VITE_API_BASE_URL` in Vercel's Production Environment Variables to the
-Render API URL (for example, `https://your-service.onrender.com/api`) and
-redeploy. Set `FRONTEND_URL` in Render to the Vercel frontend origin so the
-browser can call the API. Never commit `.env.local` or other secret files.
+Vercel proxies `/api/*` and `/demo/*` requests to the Render backend, so no
+API URL environment variable or browser CORS configuration is needed. Keep
+backend secrets on Render, not Vercel. Never commit `.env.local` or other
+secret files.
