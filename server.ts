@@ -285,6 +285,25 @@ async function startServer() {
   const port = Number(process.env.PORT) || 3000;
   app.use(express.json({ limit: '1mb' }));
 
+  const frontendOrigin = process.env.FRONTEND_URL
+    ? new URL(process.env.FRONTEND_URL).origin
+    : undefined;
+  app.use((req, res, next) => {
+    const requestOrigin = req.get('Origin');
+    if (requestOrigin && requestOrigin === frontendOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+    if (req.method === 'OPTIONS') {
+      return requestOrigin === frontendOrigin && frontendOrigin
+        ? res.sendStatus(204)
+        : res.sendStatus(403);
+    }
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
   });
@@ -770,8 +789,8 @@ Return valid JSON only, with these fields: tagline (short), headline (one senten
   });
 
   if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => res.sendFile(path.resolve(__dirname, 'dist', 'index.html')));
+    app.use(express.static(path.resolve(__dirname, 'dist/client')));
+    app.get('*', (_req, res) => res.sendFile(path.resolve(__dirname, 'dist/client', 'index.html')));
   } else {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);

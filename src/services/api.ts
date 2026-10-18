@@ -8,7 +8,10 @@ import {
   SearchPlacesParams,
 } from '../types/index.ts';
 
-const API_BASE = '/api';
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
+const API_BASE = configuredApiBase
+  ? `${configuredApiBase.replace(/\/api$/i, '')}/api`
+  : '/api';
 
 export const api = {
   // Stats

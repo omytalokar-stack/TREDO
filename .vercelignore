@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+*.env
+atlas-credentials.env
+.aistudio/
+.git/
+node_modules/
+.vercel/
