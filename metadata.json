@@ -1,0 +1,6 @@
+{
+  "name": "SiteSeller Agent",
+  "description": "Autonomous AI agent and sales platform that discovers local businesses lacking modern websites, auto-generates high-converting demo websites, and orchestrates cold outreach campaigns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
